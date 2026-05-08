@@ -1,0 +1,12 @@
+﻿<svg xmlns='http://www.w3.org/2000/svg' width='960' height='540' viewBox='0 0 960 540'>
+  <defs>
+    <linearGradient id='g' x1='0%' y1='0%' x2='100%' y2='100%'>
+      <stop offset='0%' stop-color='#1e3a8a' />
+      <stop offset='100%' stop-color='#0f766e' />
+    </linearGradient>
+  </defs>
+  <rect width='960' height='540' fill='url(#g)' />
+  <circle cx='790' cy='120' r='140' fill='rgba(255,255,255,0.12)' />
+  <circle cx='120' cy='440' r='180' fill='rgba(255,255,255,0.1)' />
+  <text x='64' y='292' fill='white' font-family='Segoe UI, Arial' font-size='66' font-weight='700'>Arrival</text>
+</svg>
