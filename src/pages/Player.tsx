@@ -1,15 +1,25 @@
-import { ChevronLeft } from "lucide-react";
+import { AlertTriangle, Captions, ChevronLeft } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { getPlayerItem, markCompleted, saveProgress, type ApiPlayerItem } from "../api/client";
+import { getApiBaseUrl, getPlayerItem, markCompleted, openLibraryItem, saveProgress, type ApiPlayerItem } from "../api/client";
 import { Header } from "../components/Header";
 import { ProgressBar } from "../components/ProgressBar";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8787";
 const PLAYBACK_RATES = [0.75, 1, 1.25, 1.5, 1.75, 2];
+const PLAYER_RATE_STORAGE_KEY = "mediavault.player.playbackRate";
+const PLAYER_SUBTITLES_STORAGE_KEY = "mediavault.player.preferSubtitles";
 
 function formatRateLabel(value: number): string {
   return `${value.toFixed(2).replace(/\.00$/, "")}x`;
+}
+
+function getStoredPlaybackRate(): number {
+  const storedValue = Number(window.localStorage.getItem(PLAYER_RATE_STORAGE_KEY) ?? 1);
+  return PLAYBACK_RATES.includes(storedValue) ? storedValue : 1;
+}
+
+function getStoredPreferSubtitles(): boolean {
+  return window.localStorage.getItem(PLAYER_SUBTITLES_STORAGE_KEY) === "true";
 }
 
 export function Player() {
@@ -23,8 +33,12 @@ export function Player() {
   const [media, setMedia] = useState<ApiPlayerItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [playbackError, setPlaybackError] = useState("");
+  const [playbackWarning, setPlaybackWarning] = useState("");
+  const [progressWarning, setProgressWarning] = useState("");
+  const [openWarning, setOpenWarning] = useState("");
   const [syncing, setSyncing] = useState(false);
-  const [playbackRate, setPlaybackRate] = useState(1);
+  const [playbackRate, setPlaybackRate] = useState(() => getStoredPlaybackRate());
   const [subtitleTrackIndex, setSubtitleTrackIndex] = useState<number>(-1);
   const [playbackState, setPlaybackState] = useState({
     currentTime: 0,
@@ -52,8 +66,21 @@ export function Player() {
         }
 
         setMedia(payload);
+        setPlaybackError("");
+        const browserProbe = document.createElement("video");
+        const browserSupport = browserProbe.canPlayType(payload.mimeType);
+        setPlaybackWarning(
+          !browserSupport || payload.compatibility.level === "low"
+            ? `${payload.compatibility.message} Formato recomendado: ${payload.compatibility.recommendedFormat}.`
+            : payload.compatibility.level === "medium"
+              ? payload.compatibility.message
+              : payload.isOnlineStream
+                ? "Reprodução online via Google Drive. A estabilidade depende da conexão e dos codecs aceitos pelo navegador."
+                : "",
+        );
         const defaultSubtitleIndex = payload.subtitleTracks.findIndex((track) => track.default);
-        setSubtitleTrackIndex(defaultSubtitleIndex >= 0 ? defaultSubtitleIndex : -1);
+        const preferredSubtitleIndex = defaultSubtitleIndex >= 0 ? defaultSubtitleIndex : payload.subtitleTracks.length ? 0 : -1;
+        setSubtitleTrackIndex(getStoredPreferSubtitles() ? preferredSubtitleIndex : -1);
       } catch (cause) {
         if (isMounted) {
           setError(cause instanceof Error ? cause.message : "Falha ao carregar player real.");
@@ -107,6 +134,9 @@ export function Player() {
         currentTime: videoRef.current.currentTime,
         duration: videoRef.current.duration || 0,
       });
+      setProgressWarning("");
+    } catch (cause) {
+      setProgressWarning(cause instanceof Error ? cause.message : "Não foi possível salvar o progresso agora.");
     } finally {
       setSyncing(false);
     }
@@ -132,6 +162,27 @@ export function Player() {
     setPlaybackState({ currentTime, duration, percentage });
   }
 
+  function handleVideoError() {
+    const errorCode = videoRef.current?.error?.code;
+    const suffix = errorCode ? ` Código do navegador: ${errorCode}.` : "";
+    setPlaybackError(
+      `Este formato ou codec pode não ser totalmente suportado pelo navegador. Para melhor compatibilidade, use MP4 com vídeo H.264 e áudio AAC.${suffix}`,
+    );
+  }
+
+  async function handleOpenFallback() {
+    if (!media) {
+      return;
+    }
+
+    try {
+      const result = await openLibraryItem(media.id);
+      setOpenWarning(result.targetType === "drive" ? "Abrindo preview do Google Drive." : "Abrindo no player padrão do sistema.");
+    } catch (cause) {
+      setOpenWarning(cause instanceof Error ? cause.message : "Não foi possível abrir fora do navegador.");
+    }
+  }
+
   function handleTimeUpdate() {
     if (!videoRef.current) {
       return;
@@ -154,13 +205,19 @@ export function Player() {
       return;
     }
 
-    await markCompleted(media.id);
-    setPlaybackState((previous) => ({ ...previous, percentage: 100, currentTime: previous.duration }));
+    try {
+      await markCompleted(media.id);
+      setProgressWarning("");
+      setPlaybackState((previous) => ({ ...previous, percentage: 100, currentTime: previous.duration }));
+    } catch (cause) {
+      setProgressWarning(cause instanceof Error ? cause.message : "Não foi possível marcar como concluída.");
+    }
   }
 
   function updatePlaybackRate(nextRate: number) {
     const normalized = PLAYBACK_RATES.includes(nextRate) ? nextRate : 1;
     setPlaybackRate(normalized);
+    window.localStorage.setItem(PLAYER_RATE_STORAGE_KEY, String(normalized));
     if (videoRef.current) {
       videoRef.current.playbackRate = normalized;
     }
@@ -276,12 +333,21 @@ export function Player() {
           <button
             type="button"
             onClick={async () => {
-              await markCompleted(media.id);
-              setPlaybackState((previous) => ({ ...previous, percentage: 100, currentTime: previous.duration }));
+              try {
+                await markCompleted(media.id);
+                setProgressWarning("");
+                setPlaybackState((previous) => ({ ...previous, percentage: 100, currentTime: previous.duration }));
+              } catch (cause) {
+                setProgressWarning(cause instanceof Error ? cause.message : "Não foi possível marcar como concluída.");
+              }
             }}
             className="btn-primary px-3 py-2 text-xs"
           >
             Marcar como concluída
+          </button>
+
+          <button type="button" onClick={() => void handleOpenFallback()} className="btn-secondary px-3 py-2 text-xs">
+            {media.isOnlineStream ? "Abrir no Drive" : "Abrir no player externo"}
           </button>
 
           <label className="ml-auto inline-flex items-center gap-2 text-xs font-semibold text-[var(--muted)]">
@@ -300,13 +366,15 @@ export function Player() {
           </label>
 
           <label className="inline-flex items-center gap-2 text-xs font-semibold text-[var(--muted)]">
+            <Captions className="h-4 w-4" />
             Legenda
             <select
               value={String(subtitleTrackIndex)}
               onChange={(event) => setSubtitleTrackIndex(Number(event.target.value))}
+              disabled={!media.subtitleTracks.length}
               className="select-field h-9 w-44"
             >
-              <option value={-1}>Desativada</option>
+              <option value={-1}>{media.subtitleTracks.length ? "Desativada" : "Nenhuma .vtt"}</option>
               {media.subtitleTracks.map((track, index) => (
                 <option key={track.id} value={index}>
                   {track.label}
@@ -319,18 +387,20 @@ export function Player() {
         <section className="panel p-4">
           <video
             ref={videoRef}
-            src={`${API_BASE_URL}${media.streamUrl}`}
+            src={`${getApiBaseUrl()}${media.streamUrl}`}
             controls
             className="h-auto w-full rounded-xl bg-black"
             onLoadedMetadata={handleLoadedMetadata}
             onTimeUpdate={handleTimeUpdate}
             onPause={handlePause}
             onEnded={handleEnded}
+            onError={handleVideoError}
           >
+            Este navegador não conseguiu abrir o vídeo embutido.
             {media.subtitleTracks.map((track) => (
               <track
                 key={track.id}
-                src={`${API_BASE_URL}${track.url}`}
+                src={`${getApiBaseUrl()}${track.url}`}
                 kind={track.kind}
                 srcLang={track.lang}
                 label={track.label}
@@ -339,7 +409,35 @@ export function Player() {
             ))}
           </video>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
+          {playbackError ? (
+            <div className="mt-4 flex items-start gap-2 rounded-lg border border-rose-400/40 bg-rose-400/10 p-3 text-xs text-rose-100">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>{playbackError}</p>
+            </div>
+          ) : null}
+
+          {playbackWarning ? (
+            <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-400/40 bg-amber-400/10 p-3 text-xs text-amber-100">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>{playbackWarning}</p>
+            </div>
+          ) : null}
+
+          {progressWarning ? (
+            <div className="mt-4 flex items-start gap-2 rounded-lg border border-sky-400/30 bg-sky-400/10 p-3 text-xs text-sky-100">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>Reprodução mantida. Sincronização de progresso pendente: {progressWarning}</p>
+            </div>
+          ) : null}
+
+          {openWarning ? (
+            <div className="mt-4 flex items-start gap-2 rounded-lg border border-slate-400/30 bg-slate-400/10 p-3 text-xs text-slate-100">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>{openWarning}</p>
+            </div>
+          ) : null}
+
+          <div className="mt-4 grid gap-3 md:grid-cols-5">
             <p className="text-sm text-[var(--muted)]">
               <strong>Título:</strong> {media.title}
             </p>
@@ -347,7 +445,13 @@ export function Player() {
               <strong>Arquivo:</strong> {media.fileName}
             </p>
             <p className="text-sm text-[var(--muted)]">
+              <strong>Formato:</strong> {media.extension.toUpperCase()} · {media.mimeType}
+            </p>
+            <p className="text-sm text-[var(--muted)]">
               <strong>Sincronização:</strong> {syncing ? "Salvando progresso..." : "Atualizado"}
+            </p>
+            <p className="text-sm text-[var(--muted)]">
+              <strong>Origem:</strong> {media.isOnlineStream ? "Online (Google Drive)" : "Arquivo local"}
             </p>
           </div>
 

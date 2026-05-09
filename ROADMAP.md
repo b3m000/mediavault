@@ -28,7 +28,9 @@
 
 ## Estado atual
 - Fases 1 a 4 estão funcionais no MVP local.
-- Fase 5 ainda não foi iniciada porque depende de OAuth/conta Google.
+- Versão `0.2.0` estabiliza a base local e inicia a fundação do Drive mestre.
+- Fase 5 passa a usar Google Drive como biblioteca principal e notebook/pendrive como caches offline.
+- A v1 do Drive usa OAuth local e pastas escolhidas para Cursos, Filmes e Arquivos.
 
 ## Fase 6+ — Evoluções
 - Download manager robusto.

@@ -1,4 +1,4 @@
-﻿import type { DownloadItem, MediaContent, MediaItem, StorageSource } from "../types/content";
+﻿import type { DownloadItem, MediaContent, MediaItem, StorageSource } from "../../types/content";
 
 const courseItems: Record<string, MediaItem[]> = {
   "course-java-poo": [
@@ -319,3 +319,4 @@ export function getMediaItemByIds(contentId: string, itemId: string): MediaItem 
   const content = getContentById(contentId);
   return content?.items?.find((item) => item.id === itemId);
 }
+

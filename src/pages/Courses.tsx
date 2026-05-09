@@ -2,13 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import { getLibrary, type ApiMediaItem } from "../api/client";
 import { ContentCard } from "../components/ContentCard";
 import { Header } from "../components/Header";
+import { LibraryFilters } from "../components/LibraryFilters";
 import { toMediaContent } from "../utils/api-mappers";
 import { sortByProgressDesc } from "../utils/content";
+import { clearFiltersWithType, matchesLibraryFilters, type LibraryFilterState } from "../utils/library-filters";
 
 export function Courses() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
   const [sort, setSort] = useState<"progress" | "title">("progress");
+  const [filters, setFilters] = useState<LibraryFilterState>(clearFiltersWithType("course"));
   const [items, setItems] = useState<ApiMediaItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
@@ -55,8 +58,7 @@ export function Courses() {
 
     const result = items.filter((item) => {
       const matchesCategory = category === "all" || item.category === category;
-      const matchesSearch = !term || item.title.toLowerCase().includes(term) || item.fileName.toLowerCase().includes(term);
-      return matchesCategory && matchesSearch;
+      return matchesCategory && matchesLibraryFilters(item, filters, term);
     });
 
     const mapped = result.map(toMediaContent);
@@ -66,7 +68,7 @@ export function Courses() {
     }
 
     return [...mapped].sort((a, b) => a.title.localeCompare(b.title));
-  }, [items, search, category, sort]);
+  }, [items, search, category, filters, sort]);
 
   return (
     <>
@@ -79,6 +81,14 @@ export function Courses() {
       />
 
       <div className="page-body space-y-4">
+        <LibraryFilters
+          filters={filters}
+          onChange={(next) => setFilters({ ...next, type: "course" })}
+          onClear={() => setFilters(clearFiltersWithType("course"))}
+          resultCount={filtered.length}
+          typeOptions={[{ value: "course", label: "Todos os cursos" }]}
+        />
+
         <section className="panel p-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center">
             <label className="text-sm font-semibold text-[var(--muted)]">

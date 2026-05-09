@@ -1,52 +1,35 @@
-﻿# MediaVault
+# MediaVault
 
-MediaVault é uma biblioteca pessoal offline para organizar, visualizar e assistir conteúdos próprios (cursos, aulas, filmes, PDFs e arquivos).
+MediaVault é uma central local de mídia para organizar, visualizar, assistir e gerenciar conteúdos próprios no notebook, pendrive e, de forma inicial, Google Drive.
 
-## Objetivo
-Criar uma interface local no estilo "biblioteca multimídia" para:
-- catalogar conteúdos;
-- mostrar onde cada item está armazenado;
-- baixar para uso offline;
-- acompanhar progresso de visualização.
+O objetivo é evitar abrir o Explorador de Arquivos pasta por pasta: o app indexa metadados, mostra capas, caminhos, armazenamento, progresso de reprodução e ações de gerenciamento para cursos, filmes, séries/coleções, PDFs, ZIPs e outros arquivos.
 
-## Fases
-- Fase 1: MVP visual (sem backend).
-- Fase 2: scanner local + SQLite.
-- Fase 3: player real + progresso persistente.
-- Fase 4: suporte a pendrive/HD externo.
-- Fase 5: integração Google Drive.
-
-## Stack atual
-- React
-- Vite
-- TypeScript
-- Tailwind CSS
-- React Router
-- Lucide React
+## Stack
+- React, Vite, TypeScript e Tailwind CSS
+- React Router e Lucide React
 - Express
-- SQLite (`node:sqlite`)
+- SQLite via `node:sqlite`
+- Google APIs para a base inicial de Drive
 
 ## Estado atual
-- Frontend navegável conectado à API local.
+- Home em formato de dashboard de mídia, com carrosséis reutilizáveis.
+- Abas de Filmes, Cursos, Arquivos, Offline e Armazenamento conectadas à API local.
 - Scanner de notebook/pendrive para vídeos, PDFs e ZIPs.
-- Player HTML5 real para vídeos locais com progresso persistente.
-- Fila de downloads/cópias entre notebook e pendrive.
-- Google Drive ainda é uma fase futura e exige integração OAuth.
+- Suporte ampliado a vídeos: `.mp4`, `.mkv`, `.avi`, `.mov`, `.webm`, `.m4v`, `.mpg`, `.mpeg`, `.m2ts`, `.mts`, `.ts`, `.wmv`, `.flv`, `.ogv`, `.ogg`, `.3gp`, `.3g2` e `.divx`.
+- Player HTML5 com progresso persistente, aviso de codec/formato e fallback para abrir no player externo ou preview do Drive.
+- Filmes com título editável, data, gênero, coleção/trilogia, ordem e capa local/manual.
+- Página de detalhes como centro de gerenciamento do material.
+- Remoção da biblioteca e exclusão física de arquivo com confirmações diferentes.
+- Armazenamento com visão detalhada por fonte, filtros e limpeza em massa.
+- Google Drive com OAuth local, configuração de pastas, sync por API e streaming inicial. Exclusão física no Drive continua fora do escopo.
 
 ## Como rodar
+Instale dependências:
+
 ```bash
 npm install
-npm run dev
 ```
 
-Se `npm` nao estiver no PATH do PowerShell:
-
-```powershell
-& "C:\\Program Files\\nodejs\\npm.cmd" install
-& "C:\\Program Files\\nodejs\\npm.cmd" run dev
-```
-
-## Rodar frontend + backend local
 Em terminais separados:
 
 ```bash
@@ -56,23 +39,62 @@ npm run dev:client
 
 Backend local padrão:
 - API: `http://localhost:8787`
-- Healthcheck: `GET /api/health`
+- Healthcheck: `GET http://localhost:8787/api/health`
 
-## Build sem npm no PATH
+Frontend local padrão do Vite:
+- `http://127.0.0.1:5173`
+- se a porta estiver ocupada, Vite pode subir em `5174`, `5175` ou outra porta livre.
+
+Se `npm` não estiver no PATH do PowerShell:
+
 ```powershell
-& "C:\\Progra~1\\nodejs\\node.exe" .\\node_modules\\typescript\\bin\\tsc -b
-& "C:\\Progra~1\\nodejs\\node.exe" .\\node_modules\\vite\\bin\\vite.js build
+& "C:\Program Files\nodejs\npm.cmd" install
+& "C:\Program Files\nodejs\npm.cmd" run dev:server
+& "C:\Program Files\nodejs\npm.cmd" run dev:client
 ```
 
 ## Verificação
+Antes de enviar mudanças:
+
 ```bash
 npm run verify
 ```
 
-## Estrutura principal
-- `src/app` aplicação e rotas
-- `src/pages` páginas
-- `src/components` componentes visuais
-- `src/data` dados mockados
-- `src/types` tipos TypeScript
-- `docs` documentação técnica de apoio
+Esse comando valida sintaxe do backend, compila TypeScript e executa o build Vite.
+
+Auditoria manual:
+
+```bash
+npm audit --json
+```
+
+## Limpeza de armazenamento
+A tela **Armazenamento** tem duas ações em massa por fonte:
+
+- **Limpar catálogo**: remove todos os itens indexados daquele armazenamento da biblioteca. Não apaga arquivos físicos. Exige digitar `LIMPAR`.
+- **Apagar arquivos indexados**: apaga os arquivos reais indexados no notebook/pendrive e remove os itens da biblioteca. Exige digitar `APAGAR ARQUIVOS`.
+
+Notas de segurança:
+- A limpeza física só atua em arquivos já indexados pelo MediaVault.
+- Arquivos soltos que nunca foram escaneados não são tocados.
+- Para itens do Google Drive, o app pode limpar o catálogo local, mas não apaga arquivos no Drive nesta fase.
+- Cópias offline de itens do Drive são desassociadas quando o armazenamento local correspondente é limpo.
+
+## Google Drive
+O Drive funciona como base preparada para biblioteca mestre, enquanto notebook e pendrive podem funcionar como cache/offline.
+
+Para autenticar:
+1. Crie um OAuth Client do tipo Desktop app no Google Cloud.
+2. Salve o JSON em `server/data/google-credentials.json`.
+3. Abra Configurações no app, conecte o Drive e informe as pastas de Cursos, Filmes e Arquivos por ID ou URL.
+
+Arquivos `server/data/*.json` ficam ignorados pelo Git para proteger credenciais e tokens locais.
+
+## Estrutura
+- `server`: API local, SQLite, scanner, storage, downloads e Drive.
+- `src/pages`: telas principais do app.
+- `src/components`: componentes visuais reutilizáveis.
+- `src/utils`: mapeadores, filtros e utilitários de conteúdo.
+- `src/types`: tipos TypeScript compartilhados no frontend.
+- `src/data/fixtures`: dados mockados preservados como histórico do MVP visual.
+- `docs`: documentação técnica de apoio.

@@ -3,6 +3,7 @@ import { mkdir, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { db, getNowIso } from "./db.js";
+import { downloadDriveFileToPath } from "./google-drive-service.js";
 import { scanStorageSource } from "./scanner.js";
 import { bytesToSizeLabel } from "./library-classifier.js";
 import { getStorageByType } from "./storage-service.js";
@@ -26,6 +27,19 @@ function resolveDestinationPath({ sourcePath, sourceRootPath, destinationRootPat
   const safeRelativePath = relativePath.startsWith("../") ? path.posix.basename(normalizedSourcePath) : relativePath;
 
   return path.posix.join(normalizedDestinationRoot, safeRelativePath);
+}
+
+function getContentRootPath(storageSource, contentType) {
+  switch (contentType) {
+    case "course":
+      return storageSource.course_path || storageSource.path;
+    case "movie":
+      return storageSource.movie_path || storageSource.path;
+    case "file":
+      return storageSource.file_path || storageSource.path;
+    default:
+      return storageSource.path;
+  }
 }
 
 function updateDownloadProgress({ downloadId, copiedBytes, sizeBytes, status }) {
@@ -93,8 +107,88 @@ async function runCopy(downloadId) {
 
   const destinationSource = getStorageByType(download.destination_storage_type);
   if (destinationSource) {
-    await scanStorageSource({ db, source: destinationSource });
+    try {
+      await scanStorageSource({ db, source: destinationSource });
+    } catch (error) {
+      db.prepare("UPDATE downloads SET error_message = ?, updated_at = ? WHERE id = ? AND status = 'completed'").run(
+        `Transferência concluída, mas a reindexação falhou: ${error instanceof Error ? error.message : "erro inesperado"}`,
+        getNowIso(),
+        downloadId,
+      );
+    }
   }
+}
+
+async function runDriveDownload(downloadId) {
+  const download = getDownloadById(downloadId);
+  if (!download || download.status === "cancelled") {
+    return;
+  }
+
+  if (existsSync(download.destination_path)) {
+    throw new Error("Arquivo de destino já existe. Remova-o ou escolha outro destino antes de transferir novamente.");
+  }
+
+  const mediaItem = getMediaItemById(download.media_item_id);
+  if (!mediaItem?.drive_file_id) {
+    throw new Error("Arquivo do Google Drive não possui ID remoto válido.");
+  }
+
+  const totalBytes = mediaItem.size_bytes ?? download.size_bytes ?? 0;
+  let lastSyncTimestamp = 0;
+
+  updateDownloadProgress({ downloadId, copiedBytes: 0, sizeBytes: totalBytes, status: "downloading" });
+
+  const copiedBytes = await downloadDriveFileToPath({
+    driveFileId: mediaItem.drive_file_id,
+    destinationPath: download.destination_path,
+    onProgress: (nextCopiedBytes) => {
+      const now = Date.now();
+      if (now - lastSyncTimestamp >= 500) {
+        lastSyncTimestamp = now;
+        updateDownloadProgress({
+          downloadId,
+          copiedBytes: nextCopiedBytes,
+          sizeBytes: totalBytes || nextCopiedBytes,
+          status: "downloading",
+        });
+      }
+    },
+  });
+
+  const current = getDownloadById(downloadId);
+  if (current?.status === "cancelled") {
+    if (existsSync(download.destination_path)) {
+      await unlink(download.destination_path);
+    }
+    return;
+  }
+
+  const nowIso = getNowIso();
+  db.prepare(
+    "UPDATE downloads SET copied_bytes = ?, size_bytes = ?, progress = 100, status = 'completed', updated_at = ?, completed_at = ? WHERE id = ?",
+  ).run(copiedBytes, totalBytes || copiedBytes, nowIso, nowIso, downloadId);
+
+  db.prepare(`
+    UPDATE media_items
+    SET
+      local_file_path = ?,
+      local_storage_type = ?,
+      is_offline = 1,
+      status = 'offline_ready',
+      updated_at = ?
+    WHERE id = ?
+  `).run(download.destination_path, download.destination_storage_type, nowIso, mediaItem.id);
+}
+
+async function runTransfer(downloadId) {
+  const download = getDownloadById(downloadId);
+  if (download?.source_storage_type === "google_drive") {
+    await runDriveDownload(downloadId);
+    return;
+  }
+
+  await runCopy(downloadId);
 }
 
 export function listDownloads() {
@@ -135,7 +229,9 @@ export async function enqueueDownload({ mediaItemId, destinationStorageType }) {
     throw new Error("Mídia não encontrada para download.");
   }
 
-  if (!existsSync(mediaItem.file_path)) {
+  const isDriveSource = mediaItem.storage_type === "google_drive";
+
+  if (!isDriveSource && !existsSync(mediaItem.file_path)) {
     throw new Error("Arquivo de origem não está acessível.");
   }
 
@@ -159,11 +255,13 @@ export async function enqueueDownload({ mediaItemId, destinationStorageType }) {
   }
 
   const downloadId = randomUUID();
-  const destinationPath = resolveDestinationPath({
-    sourcePath: mediaItem.file_path,
-    sourceRootPath: sourceStorage.path,
-    destinationRootPath: destinationStorage.path,
-  });
+  const destinationPath = isDriveSource
+    ? path.posix.join(getContentRootPath(destinationStorage, mediaItem.content_type), mediaItem.file_name)
+    : resolveDestinationPath({
+        sourcePath: mediaItem.file_path,
+        sourceRootPath: getContentRootPath(sourceStorage, mediaItem.content_type),
+        destinationRootPath: getContentRootPath(destinationStorage, mediaItem.content_type),
+      });
 
   const nowIso = getNowIso();
 
@@ -182,19 +280,20 @@ export async function enqueueDownload({ mediaItemId, destinationStorageType }) {
       created_at,
       updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, 0, 0, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, 0, ?, ?)
   `).run(
     downloadId,
     mediaItem.id,
     mediaItem.storage_type,
     destinationStorage.type,
-    mediaItem.file_path,
+    isDriveSource ? `drive://${mediaItem.drive_file_id}` : mediaItem.file_path,
     destinationPath,
+    mediaItem.size_bytes ?? 0,
     nowIso,
     nowIso,
   );
 
-  runCopy(downloadId).catch((error) => {
+  runTransfer(downloadId).catch((error) => {
     const current = getDownloadById(downloadId);
     if (current?.status === "cancelled") {
       activeTransfers.delete(downloadId);

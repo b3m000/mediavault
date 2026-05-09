@@ -4,7 +4,7 @@
 - Frontend: React + Vite + TypeScript + Tailwind.
 - Backend local: Node.js + Express.
 - Persistência local: SQLite via `node:sqlite`.
-- Fontes de armazenamento: notebook e pendrive implementados; Google Drive planejado.
+- Fontes de armazenamento: Google Drive como fonte primária; notebook e pendrive como caches offline.
 
 ## Princípios
 1. Catálogo independente da presença local do arquivo.
@@ -14,7 +14,7 @@
 
 ## Camadas
 - **UI**: navegação, cards, filtros, player real, telas de armazenamento/downloads/offline.
-- **Domínio/Serviços**: biblioteca, scanner, downloads, progresso e classificação.
+- **Domínio/Serviços**: biblioteca, scanner, downloads, progresso, Drive e classificação.
 - **Infraestrutura**: sistema de arquivos, pendrive e SQLite; Google Drive futuro.
 
 ## Modelo de dados (alvo)

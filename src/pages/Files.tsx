@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { FileArchive, FileText, FileType2, Film, Folder } from "lucide-react";
+import { FileArchive, FileText, FileType2, Film, Folder, FolderOpen, Info, PlayCircle } from "lucide-react";
 import { Link } from "react-router-dom";
-import { getLibrary, type ApiMediaItem } from "../api/client";
+import { getLibrary, revealLibraryItem, type ApiMediaItem } from "../api/client";
 import { Header } from "../components/Header";
+import { LibraryFilters } from "../components/LibraryFilters";
 import { ProgressBar } from "../components/ProgressBar";
-import { getStorageLabel, isPlayableVideoExtension } from "../utils/content";
+import { canOpenPlayerForMedia, formatBytes, getStatusLabel, getStorageLabel, getTypeLabel } from "../utils/content";
+import { DEFAULT_LIBRARY_FILTERS, matchesLibraryFilters, type LibraryFilterState } from "../utils/library-filters";
 
 function resolveExtensionLabel(fileName: string): string {
   const match = fileName.toLowerCase().match(/\.([a-z0-9]+)$/);
@@ -22,6 +24,8 @@ function resolveExtensionIcon(extension: string) {
     case "mkv":
     case "avi":
     case "mov":
+    case "webm":
+    case "m4v":
       return Film;
     default:
       return FileType2;
@@ -30,10 +34,12 @@ function resolveExtensionIcon(extension: string) {
 
 export function Files() {
   const [search, setSearch] = useState("");
-  const [fileType, setFileType] = useState("all");
+  const [filters, setFilters] = useState<LibraryFilterState>(DEFAULT_LIBRARY_FILTERS);
   const [items, setItems] = useState<ApiMediaItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [feedback, setFeedback] = useState("");
+  const [revealingId, setRevealingId] = useState("");
 
   useEffect(() => {
     let isMounted = true;
@@ -67,47 +73,55 @@ export function Files() {
     };
   }, []);
 
-  const typeOptions = useMemo(() => {
-    const values = new Set(items.map((item) => resolveExtensionLabel(item.fileName)));
-    return ["all", ...Array.from(values)];
-  }, [items]);
-
   const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase();
+    return items.filter((item) => matchesLibraryFilters(item, filters, search));
+  }, [items, search, filters]);
 
-    return items.filter((item) => {
-      const extension = resolveExtensionLabel(item.fileName);
-      const matchesType = fileType === "all" || extension === fileType;
-      const matchesSearch = !term || item.title.toLowerCase().includes(term) || item.fileName.toLowerCase().includes(term);
-      return matchesType && matchesSearch;
-    });
-  }, [items, search, fileType]);
+  async function handleRevealFolder(mediaItemId: string) {
+    setRevealingId(mediaItemId);
+    setFeedback("");
+
+    try {
+      await revealLibraryItem(mediaItemId);
+      setFeedback("Pasta aberta no sistema.");
+    } catch (cause) {
+      setFeedback(cause instanceof Error ? cause.message : "Abrir pasta local ficará melhor no app desktop.");
+    } finally {
+      setRevealingId("");
+    }
+  }
 
   return (
     <>
       <Header
         title="Arquivos"
-        subtitle="Biblioteca real escaneada localmente"
+        subtitle="PDFs, pacotes e materiais gerais sem depender do Explorador"
         searchValue={search}
         onSearchChange={setSearch}
         searchPlaceholder="Buscar arquivo"
       />
 
       <div className="page-body space-y-4">
+        <LibraryFilters
+          filters={filters}
+          onChange={setFilters}
+          onClear={() => setFilters(DEFAULT_LIBRARY_FILTERS)}
+          resultCount={filtered.length}
+          typeOptions={[
+            { value: "all", label: "Todos" },
+            { value: "file", label: "Arquivos" },
+            { value: "video", label: "Vídeos" },
+            { value: "pdf", label: "PDFs" },
+            { value: "zip", label: "ZIPs" },
+            { value: "course", label: "Cursos" },
+            { value: "movie", label: "Filmes" },
+            { value: "series", label: "Séries/Coleções" },
+          ]}
+        />
+
         <section className="panel p-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center">
-            <label className="text-sm font-semibold text-[var(--muted)]">
-              Tipo de arquivo
-              <select value={fileType} onChange={(event) => setFileType(event.target.value)} className="select-field mt-1">
-                {typeOptions.map((item) => (
-                  <option key={item} value={item}>
-                    {item === "all" ? "Todos" : item.toUpperCase()}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <p className="text-xs text-[var(--muted)] md:ml-auto">{filtered.length} item(ns) reais</p>
-          </div>
+          <p className="text-xs text-[var(--muted)]">{filtered.length} item(ns) encontrados por metadata, sem carregar arquivos pesados.</p>
+          {feedback ? <p className="mt-3 text-sm text-[var(--muted)]">{feedback}</p> : null}
         </section>
 
         {loading ? <p className="panel p-4 text-sm text-[var(--muted)]">Carregando arquivos...</p> : null}
@@ -118,7 +132,8 @@ export function Files() {
             {filtered.map((file) => {
               const extension = resolveExtensionLabel(file.fileName);
               const Icon = resolveExtensionIcon(extension);
-              const canPlay = isPlayableVideoExtension(file.extension);
+              const canPlay = canOpenPlayerForMedia(file);
+              const canReveal = file.status !== "missing" && file.status !== "pendrive_disconnected" && (file.storageType !== "google_drive" || Boolean(file.localFilePath));
 
               return (
                 <article key={file.id} className="panel panel-hover fancy-enter p-4">
@@ -127,11 +142,21 @@ export function Files() {
                       <Icon className="h-6 w-6" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-[var(--text)]">{file.fileName}</p>
-                      <p className="mt-1 text-xs text-[var(--muted)]">
-                        {extension.toUpperCase()} - {getStorageLabel(file.storageType)}
+                      <p className="truncate text-sm font-semibold text-[var(--text)]" title={file.title}>
+                        {file.title}
                       </p>
-                      <p className="mt-1 text-xs text-[var(--muted)]">Status: {file.status}</p>
+                      <p className="mt-1 truncate text-xs text-[var(--muted)]" title={file.fileName}>
+                        Arquivo: {file.fileName}
+                      </p>
+                      <p className="mt-1 truncate text-xs text-[var(--muted)]" title={file.filePath}>
+                        Caminho: {file.filePath}
+                      </p>
+                      <p className="mt-1 text-xs text-[var(--muted)]">
+                        {getTypeLabel(file.contentType)} - {extension.toUpperCase()} - {formatBytes(file.sizeBytes)}
+                      </p>
+                      <p className="mt-1 text-xs text-[var(--muted)]">
+                        {getStorageLabel(file.storageType)} - {getStatusLabel(file.status as Parameters<typeof getStatusLabel>[0])}
+                      </p>
                     </div>
                   </div>
 
@@ -139,15 +164,26 @@ export function Files() {
                     <ProgressBar value={file.progress.percentage} compact />
                   </div>
 
-                  <div className={`mt-4 grid gap-2 ${canPlay ? "grid-cols-2" : "grid-cols-1"}`}>
+                  <div className={`mt-4 grid gap-2 ${canPlay ? "grid-cols-3" : "grid-cols-2"}`}>
                     {canPlay ? (
-                      <Link to={`/player/local/${file.id}`} className="btn-primary px-3 py-2 text-center text-xs">
-                        Abrir player
+                      <Link to={`/player/local/${file.id}`} className="btn-primary inline-flex items-center justify-center gap-1 px-3 py-2 text-center text-xs">
+                        <PlayCircle className="h-4 w-4" />
+                        Player
                       </Link>
                     ) : null}
-                    <Link to={`/content/${file.id}`} className="btn-secondary px-3 py-2 text-center text-xs">
+                    <Link to={`/content/${file.id}`} className="btn-secondary inline-flex items-center justify-center gap-1 px-3 py-2 text-center text-xs">
+                      <Info className="h-4 w-4" />
                       Detalhes
                     </Link>
+                    <button
+                      type="button"
+                      onClick={() => void handleRevealFolder(file.id)}
+                      disabled={!canReveal || revealingId === file.id}
+                      className="btn-secondary inline-flex items-center justify-center gap-1 px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <FolderOpen className="h-4 w-4" />
+                      Pasta
+                    </button>
                   </div>
                 </article>
               );
@@ -155,14 +191,14 @@ export function Files() {
           </div>
 
           {!loading && !error && !filtered.length ? (
-            <p className="panel p-4 text-sm text-[var(--muted)]">Nenhum arquivo local encontrado para os filtros atuais.</p>
+            <p className="panel p-4 text-sm text-[var(--muted)]">Nenhum item encontrado para os filtros atuais.</p>
           ) : null}
         </section>
 
         <section className="panel p-4">
           <div className="flex items-center gap-2 text-sm text-[var(--muted)]">
             <Folder className="h-4 w-4" />
-            Escaneie notebook/pendrive na tela de Armazenamento para atualizar esta lista.
+            Escaneie os caminhos de Arquivos na tela de Armazenamento ou Configurações para atualizar esta lista.
           </div>
         </section>
       </div>

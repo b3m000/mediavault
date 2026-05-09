@@ -7,10 +7,24 @@ interface StorageCardProps {
   onScan?: () => void;
   onSync?: () => void;
   onChangePath?: () => void;
+  onViewContent?: () => void;
+  onClearCatalog?: () => void;
+  onClearFiles?: () => void;
   actionDisabled?: boolean;
+  clearDisabled?: boolean;
 }
 
-export function StorageCard({ source, onScan, onSync, onChangePath, actionDisabled = false }: StorageCardProps) {
+export function StorageCard({
+  source,
+  onScan,
+  onSync,
+  onChangePath,
+  onViewContent,
+  onClearCatalog,
+  onClearFiles,
+  actionDisabled = false,
+  clearDisabled = false,
+}: StorageCardProps) {
   const percentage = getUsedSpacePercentage(source);
 
   return (
@@ -20,6 +34,7 @@ export function StorageCard({ source, onScan, onSync, onChangePath, actionDisabl
           <p className="text-xs uppercase tracking-wide text-[var(--muted)]">{getStorageLabel(source.type)}</p>
           <h3 className="brand-font text-xl font-semibold text-[var(--text)]">{source.name}</h3>
           <p className="mt-1 text-xs text-[var(--muted)]">{source.path}</p>
+          {source.role ? <p className="mt-1 text-xs text-[var(--muted)]">{source.role === "primary" ? "Biblioteca mestre" : "Cache offline"}</p> : null}
         </div>
         <span className="status-pill">
           {getStorageIcon(source.type)} {getStorageStatusLabel(source.status)}
@@ -42,9 +57,26 @@ export function StorageCard({ source, onScan, onSync, onChangePath, actionDisabl
         <button className="btn-secondary px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50" type="button" onClick={onSync} disabled={actionDisabled}>
           Sincronizar índice
         </button>
-        <button className="btn-secondary px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50" type="button" onClick={onChangePath} disabled={actionDisabled}>
-          Alterar pasta
-        </button>
+        {onChangePath ? (
+          <button className="btn-secondary px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50" type="button" onClick={onChangePath} disabled={actionDisabled}>
+            Alterar pasta
+          </button>
+        ) : null}
+        {onViewContent ? (
+          <button className="btn-ghost px-3 py-2 text-xs" type="button" onClick={onViewContent}>
+            Ver conteúdo
+          </button>
+        ) : null}
+        {onClearCatalog ? (
+          <button className="btn-danger-soft px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50" type="button" onClick={onClearCatalog} disabled={clearDisabled}>
+            Limpar catálogo
+          </button>
+        ) : null}
+        {onClearFiles ? (
+          <button className="btn-danger-soft px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50" type="button" onClick={onClearFiles} disabled={clearDisabled}>
+            Apagar arquivos
+          </button>
+        ) : null}
       </div>
     </article>
   );

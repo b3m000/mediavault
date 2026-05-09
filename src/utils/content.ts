@@ -143,5 +143,85 @@ export function isPlayableVideoExtension(extension: string | undefined): boolean
     return false;
   }
 
-  return [".mp4", ".mkv", ".avi", ".mov"].includes(extension.toLowerCase());
+  return [
+    ".mp4",
+    ".mkv",
+    ".avi",
+    ".mov",
+    ".webm",
+    ".m4v",
+    ".mpg",
+    ".mpeg",
+    ".m2ts",
+    ".mts",
+    ".ts",
+    ".wmv",
+    ".flv",
+    ".ogv",
+    ".ogg",
+    ".3gp",
+    ".3g2",
+    ".divx",
+  ].includes(extension.toLowerCase());
+}
+
+export function canOpenPlayerForMedia(input: {
+  extension?: string;
+  storageType?: StorageType;
+  storage?: StorageType;
+  localFilePath?: string | null;
+  driveFileId?: string | null;
+}): boolean {
+  const storageType = input.storageType ?? input.storage;
+  return (
+    isPlayableVideoExtension(input.extension) &&
+    (storageType !== "google_drive" || Boolean(input.localFilePath) || Boolean(input.driveFileId))
+  );
+}
+
+export function isOnlinePlayerMedia(input: {
+  extension?: string;
+  storageType?: StorageType;
+  storage?: StorageType;
+  localFilePath?: string | null;
+  driveFileId?: string | null;
+}): boolean {
+  const storageType = input.storageType ?? input.storage;
+  return isPlayableVideoExtension(input.extension) && storageType === "google_drive" && !input.localFilePath && Boolean(input.driveFileId);
+}
+
+export function formatBytes(bytesValue: number | undefined): string {
+  const bytes = Number(bytesValue ?? 0);
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 B";
+  }
+
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let size = bytes;
+  let unitIndex = 0;
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+
+  const decimals = unitIndex <= 1 ? 0 : 2;
+  return `${size.toFixed(decimals)} ${units[unitIndex]}`;
+}
+
+export function formatDateOnly(isoDate: string | null | undefined): string {
+  if (!isoDate) {
+    return "--";
+  }
+
+  const parsed = new Date(`${isoDate}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return "--";
+  }
+
+  return parsed.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 }

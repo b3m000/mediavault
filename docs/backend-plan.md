@@ -9,6 +9,7 @@ Backend local implementado com Node.js, Express e SQLite via `node:sqlite`.
 - `server/storage-service.js`: fontes de notebook/pendrive e status.
 - `server/scanner.js`: indexação de arquivos suportados.
 - `server/download-service.js`: cópias entre fontes locais.
+- `server/google-drive-service.js`: OAuth local, configuração de pastas, sync e download do Drive.
 - `server/library-classifier.js`: classificação visual de biblioteca.
 
 ## Entregas concluídas
@@ -22,13 +23,14 @@ Backend local implementado com Node.js, Express e SQLite via `node:sqlite`.
 8. Tabelas futuras de tags
 
 ## Pendências reais
-- Integração Google Drive com OAuth, listagem, metadados e download.
 - Uso pleno de `contents`, `tags` e `content_tags` no frontend.
 - Detecção automática de pendrive em tempo real.
 - Testes automatizados de API, scanner, download e progresso.
+- Deduplicação completa entre itens Drive e scans locais antigos.
 
 ## Riscos técnicos
 - Grande volume de arquivos no primeiro scan.
 - Concorrência e retomada de downloads interrompidos.
 - Portabilidade entre Windows, Linux e macOS.
 - Limites de permissões do sistema de arquivos local.
+- Escopos OAuth do Drive exigem cuidado com credenciais e tokens locais.

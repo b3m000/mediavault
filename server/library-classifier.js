@@ -1,15 +1,47 @@
-﻿import path from "node:path";
+import path from "node:path";
+import { normalizePath } from "./config.js";
 
-const COURSE_HINTS = ["curso", "cursos", "course", "courses", "aula", "aulas"];
-const MOVIE_HINTS = ["filme", "filmes", "movie", "movies", "cinema"];
-const VIDEO_EXTENSIONS = new Set([".mp4", ".mkv", ".avi", ".mov"]);
+export const CONTENT_TYPES = ["course", "movie", "file"];
+
+const COURSE_HINTS = ["curso", "cursos", "course", "courses", "aula", "aulas", "modulo", "módulo", "lesson", "lessons"];
+const MOVIE_HINTS = ["filme", "filmes", "movie", "movies", "cinema", "films"];
+const FILE_HINTS = ["arquivo", "arquivos", "file", "files", "documento", "documentos", "pdf", "zip"];
+const VIDEO_EXTENSIONS = new Set([
+  ".mp4",
+  ".mkv",
+  ".avi",
+  ".mov",
+  ".webm",
+  ".m4v",
+  ".mpg",
+  ".mpeg",
+  ".m2ts",
+  ".mts",
+  ".ts",
+  ".wmv",
+  ".flv",
+  ".ogv",
+  ".ogg",
+  ".3gp",
+  ".3g2",
+  ".divx",
+]);
+const PATH_COLUMNS = {
+  course: "course_path",
+  movie: "movie_path",
+  file: "file_path",
+};
 
 function normalize(input) {
   return String(input ?? "").toLowerCase();
 }
 
 function normalizePathLike(value) {
-  return String(value ?? "").replace(/\\/g, "/");
+  return normalizePath(String(value ?? ""));
+}
+
+function normalizePathForCompare(value) {
+  return normalizePathLike(value).toLowerCase();
 }
 
 function toTitleCase(input) {
@@ -19,7 +51,7 @@ function toTitleCase(input) {
   }
 
   return trimmed
-    .split(/[-_ ]+/)
+    .split(/[-_ .]+/)
     .filter(Boolean)
     .map((word) => word[0].toUpperCase() + word.slice(1).toLowerCase())
     .join(" ");
@@ -29,36 +61,111 @@ function resolveRelativePath(filePath, sourcePath) {
   const normalizedFilePath = normalizePathLike(filePath);
   const normalizedSourcePath = normalizePathLike(sourcePath);
 
+  if (!normalizedSourcePath) {
+    return normalizedFilePath;
+  }
+
   const relativeRaw = path.posix.relative(normalizedSourcePath, normalizedFilePath);
-  return relativeRaw.startsWith("../") ? normalizedFilePath : relativeRaw;
+  return relativeRaw.startsWith("../") || relativeRaw === ".." ? normalizedFilePath : relativeRaw;
 }
 
-export function resolveContentType({ extension, filePath, sourcePath }) {
-  const normalizedExtension = normalize(extension);
+function pathSegmentsForClassification({ filePath, sourcePath }) {
   const relativePath = resolveRelativePath(filePath, sourcePath);
-  const firstSegment = normalize(relativePath.split("/")[0] ?? "");
+  return relativePath.split("/").filter(Boolean).map((segment) => normalize(segment));
+}
 
-  if (VIDEO_EXTENSIONS.has(normalizedExtension)) {
-    if (MOVIE_HINTS.some((hint) => firstSegment.includes(hint))) {
-      return "movie";
+function hasHint(segments, hints) {
+  return segments.some((segment) => hints.some((hint) => segment.includes(hint)));
+}
+
+function isKnownContentType(contentType) {
+  return CONTENT_TYPES.includes(contentType);
+}
+
+export function isPathInsideDirectory(filePath, directoryPath) {
+  const normalizedFilePath = normalizePathForCompare(filePath);
+  const normalizedDirectoryPath = normalizePathForCompare(directoryPath);
+
+  if (!normalizedFilePath || !normalizedDirectoryPath) {
+    return false;
+  }
+
+  const relativePath = path.posix.relative(normalizedDirectoryPath, normalizedFilePath);
+  return relativePath === "" || (!relativePath.startsWith("../") && relativePath !== ".." && !path.posix.isAbsolute(relativePath));
+}
+
+export function getSourceContentPath(source, contentType) {
+  if (!isKnownContentType(contentType)) {
+    return "";
+  }
+
+  return normalizePathLike(source?.[PATH_COLUMNS[contentType]] ?? "");
+}
+
+export function getSourceContentPaths(source) {
+  return CONTENT_TYPES.map((contentType) => ({
+    contentType,
+    path: getSourceContentPath(source, contentType),
+  })).filter((target) => Boolean(target.path));
+}
+
+export function resolveSourcePathForContent({ filePath, source, contentType }) {
+  const configuredPath = getSourceContentPath(source, contentType);
+  if (configuredPath && isPathInsideDirectory(filePath, configuredPath)) {
+    return configuredPath;
+  }
+
+  return normalizePathLike(source?.path ?? "");
+}
+
+export function resolveContentType({ extension, filePath, sourcePath, source, preferredContentType }) {
+  const normalizedExtension = normalize(extension);
+
+  if (!VIDEO_EXTENSIONS.has(normalizedExtension)) {
+    return "file";
+  }
+
+  if (isKnownContentType(preferredContentType)) {
+    return preferredContentType;
+  }
+
+  for (const target of getSourceContentPaths(source)) {
+    if (isPathInsideDirectory(filePath, target.path)) {
+      return target.contentType;
     }
+  }
 
-    if (COURSE_HINTS.some((hint) => firstSegment.includes(hint))) {
-      return "course";
-    }
+  const segments = pathSegmentsForClassification({ filePath, sourcePath });
 
+  if (hasHint(segments, MOVIE_HINTS)) {
+    return "movie";
+  }
+
+  if (hasHint(segments, COURSE_HINTS)) {
     return "course";
   }
 
-  return "file";
+  if (hasHint(segments, FILE_HINTS)) {
+    return "file";
+  }
+
+  return "movie";
 }
 
-export function resolveCategory({ filePath, sourcePath, extension }) {
+export function resolveCategory({ filePath, sourcePath, extension, contentType }) {
   const relativePath = resolveRelativePath(filePath, sourcePath);
   const segments = relativePath.split("/").filter(Boolean);
 
   if (segments.length >= 2) {
     return toTitleCase(segments[0]);
+  }
+
+  if (contentType === "course") {
+    return "Cursos";
+  }
+
+  if (contentType === "movie") {
+    return "Filmes";
   }
 
   if (segments.length === 1) {

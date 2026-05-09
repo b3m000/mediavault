@@ -2,16 +2,17 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { getLibrary, removePendriveItem, type ApiMediaItem } from "../api/client";
 import { Header } from "../components/Header";
-import { getStorageLabel, getTypeLabel } from "../utils/content";
+import { LibraryFilters } from "../components/LibraryFilters";
+import { canOpenPlayerForMedia, getStatusLabel, getStorageLabel, getTypeLabel } from "../utils/content";
+import { DEFAULT_LIBRARY_FILTERS, matchesLibraryFilters, type LibraryFilterState } from "../utils/library-filters";
 
 export function Offline() {
-  const [typeFilter, setTypeFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [filters, setFilters] = useState<LibraryFilterState>({ ...DEFAULT_LIBRARY_FILTERS, storage: "offline" });
   const [items, setItems] = useState<ApiMediaItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState("");
-
-  const typeOptions = ["all", "course", "movie", "file"];
 
   async function refresh() {
     setLoading(true);
@@ -31,18 +32,13 @@ export function Offline() {
     void refresh();
   }, []);
 
-  const offlineItems = useMemo(() => {
-    return items.filter((item) => {
-      if (typeFilter === "all") {
-        return true;
-      }
+  const offlineItems = useMemo(
+    () => items.filter((item) => matchesLibraryFilters(item, filters, search)),
+    [items, filters, search],
+  );
 
-      return item.contentType === typeFilter;
-    });
-  }, [items, typeFilter]);
-
-  const byNotebook = offlineItems.filter((item) => item.storageType === "notebook");
-  const byPendrive = offlineItems.filter((item) => item.storageType === "pendrive");
+  const byNotebook = offlineItems.filter((item) => (item.localStorageType ?? item.storageType) === "notebook");
+  const byPendrive = offlineItems.filter((item) => (item.localStorageType ?? item.storageType) === "pendrive");
 
   async function handleRemovePendriveItem(mediaItemId: string) {
     setBusyId(mediaItemId);
@@ -60,26 +56,26 @@ export function Offline() {
 
   return (
     <>
-      <Header title="Offline" subtitle="Conteúdos disponíveis sem internet" searchPlaceholder="Buscar offline" />
+      <Header
+        title="Offline"
+        subtitle="Conteúdos disponíveis sem internet"
+        searchValue={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Buscar offline"
+      />
 
       <div className="page-body space-y-5">
-        <section className="panel p-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center">
-            <label className="text-sm font-semibold text-[var(--muted)]">
-              Filtrar por tipo
-              <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} className="select-field mt-1">
-                {typeOptions.map((item) => (
-                  <option key={item} value={item}>
-                    {item === "all" ? "Todos" : getTypeLabel(item as "course" | "movie" | "file")}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="grid gap-2 text-xs text-[var(--muted)] md:ml-auto">
-              <p>Notebook: {byNotebook.length} item(ns)</p>
-              <p>Pendrive: {byPendrive.length} item(ns)</p>
-            </div>
-          </div>
+        <LibraryFilters
+          filters={filters}
+          onChange={setFilters}
+          onClear={() => setFilters({ ...DEFAULT_LIBRARY_FILTERS, storage: "offline" })}
+          resultCount={offlineItems.length}
+        />
+
+        <section className="panel grid gap-2 p-4 text-xs text-[var(--muted)] md:grid-cols-3">
+          <p>Notebook: {byNotebook.length} item(ns)</p>
+          <p>Pendrive: {byPendrive.length} item(ns)</p>
+          <p>Total filtrado: {offlineItems.length} item(ns)</p>
         </section>
 
         {loading ? <p className="panel p-4 text-sm text-[var(--muted)]">Carregando biblioteca offline...</p> : null}
@@ -98,10 +94,18 @@ export function Offline() {
                     <div>
                       <p className="font-semibold text-[var(--text)]">{item.title}</p>
                       <p className="text-xs text-[var(--muted)]">
-                        {getTypeLabel(item.contentType)} - {getStorageLabel(item.storageType)}
+                        {getTypeLabel(item.contentType)} - {getStorageLabel(item.localStorageType ?? item.storageType)}
                       </p>
+                      <p className="mt-1 text-xs text-[var(--muted)]">Arquivo: {item.fileName}</p>
+                      <p className="mt-1 break-all text-xs text-[var(--muted)]">Caminho: {item.localFilePath || item.filePath}</p>
+                      <p className="mt-1 text-xs text-[var(--muted)]">Status: {getStatusLabel(item.status as Parameters<typeof getStatusLabel>[0])}</p>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
+                      {canOpenPlayerForMedia(item) ? (
+                        <Link to={`/player/local/${item.id}`} className="btn-primary px-3 py-1.5 text-xs">
+                          Assistir
+                        </Link>
+                      ) : null}
                       <Link to={`/content/${item.id}`} className="btn-secondary px-3 py-1.5 text-xs">
                         Abrir
                       </Link>
@@ -125,21 +129,31 @@ export function Offline() {
                     <div>
                       <p className="font-semibold text-[var(--text)]">{item.title}</p>
                       <p className="text-xs text-[var(--muted)]">
-                        {getTypeLabel(item.contentType)} - {getStorageLabel(item.storageType)}
+                        {getTypeLabel(item.contentType)} - {getStorageLabel(item.localStorageType ?? item.storageType)}
                       </p>
+                      <p className="mt-1 text-xs text-[var(--muted)]">Arquivo: {item.fileName}</p>
+                      <p className="mt-1 break-all text-xs text-[var(--muted)]">Caminho: {item.localFilePath || item.filePath}</p>
+                      <p className="mt-1 text-xs text-[var(--muted)]">Status: {getStatusLabel(item.status as Parameters<typeof getStatusLabel>[0])}</p>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
+                      {canOpenPlayerForMedia(item) ? (
+                        <Link to={`/player/local/${item.id}`} className="btn-primary px-3 py-1.5 text-xs">
+                          Assistir
+                        </Link>
+                      ) : null}
                       <Link to={`/content/${item.id}`} className="btn-secondary px-3 py-1.5 text-xs">
                         Abrir
                       </Link>
-                      <button
-                        type="button"
-                        onClick={() => void handleRemovePendriveItem(item.id)}
-                        disabled={busyId === item.id}
-                        className="btn-danger-soft px-3 py-1.5 text-xs disabled:opacity-50"
-                      >
-                        Remover offline
-                      </button>
+                      {(item.localStorageType ?? item.storageType) === "pendrive" && item.storageType === "pendrive" ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleRemovePendriveItem(item.id)}
+                          disabled={busyId === item.id}
+                          className="btn-danger-soft px-3 py-1.5 text-xs disabled:opacity-50"
+                        >
+                          Remover offline
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 </article>

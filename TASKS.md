@@ -143,3 +143,19 @@ Prioridade:
 - [x] P1 — Evitar sobrescrever destino em transferências
 - [x] P1 — Limpar arquivo parcial ao cancelar download
 - [x] P1 — Adicionar script de verificação (`npm run verify`)
+
+## Sprint 8 — Release local 0.2.0 + Drive mestre
+- [x] P0 — Atualizar dependências com vulnerabilidade reportada pelo `npm audit`
+- [x] P0 — Subir versão do app para `0.2.0`
+- [x] P0 — Adicionar `CHANGELOG.md`
+- [x] P1 — Corrigir download concluído marcado como falha por erro de reindexação
+- [x] P1 — Tratar falha de salvamento de progresso no player sem interromper reprodução
+- [x] P1 — Aplicar preferência de legenda automática no player
+- [x] P1 — Isolar fixtures mockadas do MVP visual
+- [x] P0 — Adicionar dependências oficiais para Google Drive OAuth/API
+- [x] P0 — Criar endpoints base de Drive (`status`, `auth`, `disconnect`, `folders`, `sync`)
+- [x] P1 — Permitir configuração de três pastas Drive por ID ou URL
+- [x] P1 — Sincronizar Drive como fonte `primary` para vídeos, PDFs e ZIPs
+- [x] P1 — Permitir download Drive → notebook/pendrive pela fila
+- [ ] P2 — Deduplicação completa entre Drive e scans locais antigos
+- [ ] P2 — Testes automatizados de serviços Drive/download/scanner
